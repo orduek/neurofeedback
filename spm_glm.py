@@ -88,7 +88,7 @@ def saveScrub(regressors_file, thr):
     return str(perFile)
 
 # %%
-subject_list = ['1263','1286'] # bad subject '1271', multiple runs - '1423', '030',
+subject_list = ['1263','1286','1319','1413','1450','1524','1525','1527','1528','1547','1551','1555'] # bad subject '1271', multiple runs - '1423', '030',
 # Map field names to individual subject runs.
 
 
@@ -111,7 +111,7 @@ selectfiles = pe.Node(nio.SelectFiles(templates,
                                base_directory=data_dir),
                    name="selectfiles")
 
-selectfiles.inputs.ses = '1' 
+selectfiles.inputs.ses = ['1','2'] 
 selectfiles.inputs.ctrlNum = [1,2]#,3,4]     
 
 # %%
