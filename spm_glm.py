@@ -88,7 +88,7 @@ def saveScrub(regressors_file, thr):
     return str(perFile)
 
 # %%
-subject_list = ['1263','1286','1319','1413','1450','1524','1525','1527','1528','1547','1551','1555'] # bad subject '1271', multiple runs - '1423', '030',
+subject_list = ['1263']#,'1286','1319','1413','1450','1524','1525','1527','1528','1547','1551','1555'] # bad subject '1271', multiple runs - '1423', '030',
 # Map field names to individual subject runs.
 
 
@@ -103,7 +103,7 @@ infosource.iterables = [('subject_id', subject_list)]
 templates = {'func': os.path.join(data_dir, 'sub-{subject_id}', 'ses-{ses}', 'func', 'sub-{subject_id}_ses-{ses}_task-control{ctrlNum}_space-MNI152NLin2009cAsym_res-2_desc-preproc_bold.nii.gz'),
              'mask': os.path.join(data_dir, 'sub-{subject_id}', 'ses-{ses}', 'func', 'sub-{subject_id}_ses-{ses}_task-control{ctrlNum}_space-MNI152NLin2009cAsym_res-2_desc-brain_mask.nii.gz'),
              'regressors': os.path.join(data_dir, 'sub-{subject_id}', 'ses-{ses}', 'func', 'sub-{subject_id}_ses-{ses}_task-control{ctrlNum}_desc-confounds_regressors.tsv'),
-             'events': '/media/Data/Lab_Projects/neurofeedback/neuroimaging/events_file_{ctrlNum}.csv'
+             'events': '/media/Data/Lab_Projects/neurofeedback/neuroimaging/events_file.csv'
              }
 
 
@@ -112,14 +112,14 @@ selectfiles = pe.Node(nio.SelectFiles(templates,
                    name="selectfiles")
 
 selectfiles.inputs.ses = ['1','2'] 
-selectfiles.inputs.ctrlNum = [1,2]#,3,4]     
+selectfiles.inputs.ctrlNum = [1,2]#,3,4] [5,6]#    
 
 # %%
 # Extract motion parameters from regressors file
 runinfo = pe.MapNode(util.Function(
     input_names=['in_file', 'events_file','regressors_file', 'regressors_names', 'removeTR', 'thr'],
     function=_bids2nipypeinfo, output_names=['info', 'realign_file']),
-    name='runinfo', iterfield = ['in_file','events_file', 'regressors_file'])
+    name='runinfo', iterfield = ['in_file', 'regressors_file']) #'events_file',
 
 # Set the column names to be used from the confounds file
 runinfo.inputs.regressors_names = ['std_dvars', 'framewise_displacement', 'scrub'] + \
@@ -129,7 +129,7 @@ runinfo.inputs.motion_columns   = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'ro
 
 runinfo.inputs.removeTR = 0
 runinfo.inputs.thr = thr # set threshold of scrubbing
-#runinfo.inputs.events_file = '/media/Data/Lab_Projects/neurofeedback/neuroimaging/events_file.csv'
+runinfo.inputs.events_file = '/media/Data/Lab_Projects/neurofeedback/neuroimaging/events_file.csv'
 # %%
 ## adding node for the saveScrub functions
 svScrub = pe.MapNode(util.Function(
@@ -138,6 +138,28 @@ svScrub = pe.MapNode(util.Function(
     )
 
 svScrub.inputs.thr = thr
+# %%
+## create a mask of all runs for each subject
+def groupMask(mask_files, subject_id):
+    import nilearn
+    import os
+    from pathlib import Path
+    import nibabel as nib
+    from pathlib import Path
+    a = Path('.').resolve()
+    print(a)
+    submask = nilearn.image.mean_img(mask_files)
+    submask = nilearn.image.math_img("a>=0.98", a=submask)
+    submask.to_filename(os.path.join(a, 'submask.nii'))#submask.to_filename(submask)
+    file = os.path.join(a, 'submask.nii')
+    return str(file)
+
+groupMask = pe.Node(util.Function(
+    input_names = ['mask_files', 'subject_id'], output_names = ['submask'],
+    function = groupMask), name = 'groupMask'
+    )
+
+
 # %%
 extract = pe.MapNode(fsl.ExtractROI(), name="extract", iterfield = ['in_file'])
 extract.inputs.t_min = removeTR
@@ -178,9 +200,12 @@ level1design.inputs.model_serial_correlations = 'AR(1)'
 wfSPM = Workflow(name="l1spm_resp", base_dir=output_dir)
 wfSPM.connect([
         (infosource, selectfiles, [('subject_id', 'subject_id')]),
-        (selectfiles, runinfo, [('events','events_file'),('regressors','regressors_file')]),
+        (infosource, groupMask, [('subject_id', 'subject_id')]),
+        (selectfiles, runinfo, [('regressors','regressors_file')]),
         (selectfiles, svScrub, [('regressors', 'regressors_file')]),
         (selectfiles, extract, [('func','in_file')]),
+        (selectfiles, groupMask, [('mask','mask_files')]),
+        (groupMask, level1design, [('submask','mask_image')]),
         (extract, smooth, [('roi_file','in_files')]),
         (smooth, runinfo, [('smoothed_files','in_file')]),
         (smooth, modelspec, [('smoothed_files', 'functional_runs')]),
